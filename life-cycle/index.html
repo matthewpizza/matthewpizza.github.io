@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Life Cycle</title>
+        <script type="text/javascript">
+            let events = "**Events**\n\n" +
+                "timing\tevent/description\n\n";
+
+            // N.B. window.performance.now() has varying levels of precision
+            //
+            // As of December 2019, browser vendors use the following precision
+            // as well as varying levels of randomness:
+            //
+            // - Safari rounds to 1ms
+            //   https://webkit.org/blog/8048/what-spectre-and-meltdown-mean-for-webkit/
+            // - Edge and IE round to 10µs
+            //   https://blogs.windows.com/msedgedev/2018/01/03/speculative-execution-mitigations-microsoft-edge-internet-explorer/
+            // - Firefox rounds to 1ms
+            //   https://developer.mozilla.org/en-US/docs/Web/API/Performance/now
+            // - Chrome rounds to 100µs
+            //   https://chromium-review.googlesource.com/c/chromium/src/+/849993
+            //
+            // The resolution is in flux due to browser vendors mitigating
+            // timing attacks and fingerprinting :-/
+            const nooooowww = () => {
+                // anyways here’s wonderwall
+                return window.performance.now().toFixed(0);
+            };
+
+            const getReadyStateDescription = readyState => {
+                if (readyState === "loading") {
+                    return "The HTML document is still loading and being parsed into the DOM";
+                } else if (readyState === "interactive") {
+                    return "The HTML document is loaded and parsed into the DOM,\n\tDOMContentLoaded is about to be called"
+                } else if (readyState === "complete") {
+                    return "The document is loaded and parsed, assets are downloaded\n\tand window.onload is about to be called";
+                } else {
+                    return "";
+                }
+            };
+
+            const updateEventsFromReadyState = () => {
+                events += `${nooooowww()}\treadyState - ${document.readyState}\n\n\t${getReadyStateDescription(document.readyState)}\n\n\n`
+            };
+
+            updateEventsFromReadyState(); // For loading, the initial value
+            document.addEventListener("readystatechange", updateEventsFromReadyState);
+
+            // Resources:
+            // - https://developers.google.com/web/fundamentals/performance/critical-rendering-path/constructing-the-object-model
+            document.addEventListener("DOMContentLoaded", e => {
+                events += `${nooooowww()}\t${e.type}\n\n\tThe initial HTML document is loaded and parsed, assets\n\tlike stylesheets and images are still downloading\n\n\tFrom the request:\n\n\t* bytes\t\treceived by the browser over the wire (or off disk)\n\t* charaters\tbytes converted into text\n\t* tokens\ttext is converted into tokens like the opening <html> tag\n\t* nodes\t\ttokens are converted into node objects\n\t* DOM\t\tnodes are constructed into the DOM tree\n\n\n`;
+            });
+
+            window.addEventListener("load", e => {
+                events += `${nooooowww()}\t${e.type}\n\n\tAll assets have been loaded and parsed\n\n\n`;
+            });
+
+            window.addEventListener("load", e => {
+                document.getElementById("events").textContent = events;
+                document.getElementById("info").textContent = "**Why shit is slow**\n\n\t" +
+                    "interactive / DOMContentLoaded\n\n\t\t" +
+                        "* Too many nodes to parse for the initial DOM\n\t\t" +
+                        // Resources:
+                        // https://www.growingwiththeweb.com/2014/02/async-vs-defer-attributes.html
+                        "* Too much synchronous (render-blocking) JS needs to be downloaded and parsed\n\t\t" +
+                        "  i.e. a <script> without defer/async or a src or not loaded last in the document\n\n\t" +
+                    "complete / load\n\n\t\t" +
+                        "* Non-lazy loaded images or videos\n\t\t" +
+                        "* The amount of CSS that needs to be parsed into the CSSOM";
+            });
+        </script>
+    </head>
+    <body>
+        <pre id="events"></pre>
+        <pre id="info"></pre>
+    </body>
+</html>
