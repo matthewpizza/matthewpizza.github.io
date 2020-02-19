@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+        <title>EXIF</title>
+        <style type="text/css">
+            body {
+                margin: 1rem;
+                font-family: Menlo, monospace;
+            }
+            label {
+                display: block;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                cursor: pointer;
+                background-color: white;
+            }
+            div {
+                padding: 1rem;
+                background-color: white;
+            }
+            input[type="file"] {
+                display: none;
+            }
+            table {
+                border-collapse: collapse;
+                border-spacing: 0;
+                width: 100%;
+            }
+            table,
+            th,
+            td {
+                border: none;
+            }
+            td,
+            th {
+                padding: 1rem 0.5rem;
+                display: table-cell;
+                text-align: left;
+                vertical-align: middle;
+            }
+            tr:nth-child(even) {
+                background-color: rgba(242, 242, 242, 0.5);
+            }
+            tr > td:first-child {
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <label for="load-image">Load image/jpeg</label>
+        <input id="load-image" type="file" accept="image/jpeg">
+        <div></div>
+        <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
+        <script type="text/javascript">
+            class LoadExif {
+                constructor() {
+                    this.setup().bindEvents();
+                }
+                setup() {
+                    this.label = document.querySelector("label");
+                    this.input = document.querySelector("input");
+                    this.div = document.querySelector("div");
+
+                    this.reader = new FileReader();
+
+                    // Nice two column for lil screens
+                    this.MAX_DISPLAY_WIDTH = screen.width / 2;
+
+                    this.OUTPUT_KEYS = [
+                        "Camera",
+                        "Size",
+                        "Dimensions",
+                        "Date",
+                        "GPS",
+                        "Aperture",
+                        "FocalLength",
+                        "ShutterSpeed",
+                        "ISO",
+                    ];
+
+                    this.FILE_SIZES = ["bytes", "KB", "MB", "GB", "TB"];
+
+                    return this;
+                }
+                bindEvents() {
+                    this.reader.addEventListener("load", this.onFileReaderLoad.bind(this));
+                    this.input.addEventListener("change", this.onInputChange.bind(this));
+
+                    return this;
+                }
+                onFileReaderLoad(event) {
+                    const img = new Image();
+                    img.onload = () => {
+                        const width = img.width >= this.MAX_DISPLAY_WIDTH ?
+                            this.MAX_DISPLAY_WIDTH :
+                            img.width;
+
+                        Object.assign(document.body.style, {
+                            backgroundImage: `url(${img.src})`,
+                            backgroundSize: `${width}px auto`,
+                        });
+                    };
+                    img.src = event.target.result;
+                }
+                onInputChange(event) {
+                    this.file = event.target.files.item(0);
+                    this.handleImage();
+                }
+                onExifReady() {
+                    this.exifData = EXIF.getAllTags(this.file);
+
+                    // File to base64 string for preview
+                    this.reader.readAsDataURL(this.file);
+
+                    this.writeExifData();
+                }
+                handleImage() {
+                    // Set label to the new filename
+                    this.label.innerText = this.file.name;
+
+                    // Reset values
+                    document.body.style = null;
+                    this.div.innerText = "";
+
+                    // Read EXIF data
+                    EXIF.getData(this.file, this.onExifReady.bind(this));
+                }
+                writeExifData() {
+                    const table = document.createElement("table");
+
+                    this.OUTPUT_KEYS.forEach(key => {
+                        let val = this[key];
+                        if (!val) {
+                            return;
+                        }
+
+                        let tr = table.insertRow(-1);
+                        (tr.insertCell(-1)).innerText = key;
+
+                        if (val instanceof HTMLElement) {
+                            (tr.insertCell(-1)).appendChild(val);
+                        } else {
+                            (tr.insertCell(-1)).innerText = val;
+                        }
+                    });
+
+                    this.div.appendChild(table);
+                }
+
+                get Camera() {
+                    if (!this.exifData.Make) {
+                        return null;
+                    }
+
+                    let formattedCamera = this.exifData.Make.trim();
+
+                    if (this.exifData.Model) {
+                        formattedCamera += ` ${this.exifData.Model.trim()}`;
+                    }
+
+                    return formattedCamera;
+                }
+                get Size() {
+                    return this.bytesToSize(this.file.size);
+                }
+                get Dimensions() {
+                    if (!this.exifData.PixelXDimension || !this.exifData.PixelYDimension) {
+                        return null;
+                    }
+
+                    return `${this.exifData.PixelXDimension} × ${this.exifData.PixelYDimension}`;
+                }
+                get Date() {
+                    return this.file.lastModified ?
+                        (new Date(this.file.lastModified)).toDateString() :
+                        null;
+                }
+                get Aperture() {
+                    return this.exifData.ApertureValue ?
+                        `ƒ/${this.exifData.ApertureValue.toFixed(1)}` :
+                        null;
+                }
+                get FocalLength() {
+                    if (!this.exifData.FocalLength) {
+                        return null;
+                    }
+
+                    let formattedFocalLength = `${this.exifData.FocalLength.toString()} mm`;
+
+                    if (this.exifData.FocalLengthIn35mmFilm) {
+                        formattedFocalLength += ` (${this.exifData.FocalLengthIn35mmFilm} mm equiv.)`;
+                    }
+
+                    return formattedFocalLength;
+                }
+                get ShutterSpeed() {
+                    if (!(this.exifData.ExposureTime instanceof Number)) {
+                        return null;
+                    }
+
+                    const reducedDenominator = (
+                        this.exifData.ExposureTime.denominator / this.exifData.ExposureTime.numerator
+                    );
+
+                    // Is a "real" shutter speed?
+                    if (this.isWholeNumber(reducedDenominator)) {
+                        return `1/${reducedDenominator}`;
+                    }
+
+                    return `${this.exifData.ExposureTime.toFixed(1)}s`;
+                }
+                get ISO() {
+                    return this.exifData.ISOSpeedRatings ?
+                        this.exifData.ISOSpeedRatings :
+                        null;
+                }
+                get GPS() {
+                    if (!this.exifData.GPSLatitude || !this.exifData.GPSLongitude) {
+                        return null;
+                    }
+
+                    const lat = this.convertSexagesimalToDecimal(
+                        ...this.exifData.GPSLatitude,
+                        this.exifData.GPSLatitudeRef
+                    );
+
+                    const long = this.convertSexagesimalToDecimal(
+                        ...this.exifData.GPSLongitude,
+                        this.exifData.GPSLongitudeRef
+                    );
+
+                    const link = document.createElement("a");
+                    link.target = "_blank";
+                    link.href = `https://www.google.com/maps/@${lat},${long},15z`;
+                    link.innerText = `${lat.toFixed(4)}, ${long.toFixed(4)}`;
+
+                    return link;
+                }
+
+                isWholeNumber(number) {
+                    return (number - Math.floor(number)) === 0;
+                }
+                bytesToSize(bytes) {
+                    // Borrowed from https://gist.github.com/lanqy/5193417
+                    if (!bytes) {
+                        return null;
+                    }
+
+                    const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)), 10);
+
+                    // bytes
+                    if (i === 0) {
+                        return `${bytes} ${this.FILE_SIZES[i]}`
+                    }
+
+                    return `${(bytes / (1024 ** i)).toFixed(1)} ${this.FILE_SIZES[i]}`;
+                }
+                convertSexagesimalToDecimal(degrees, minutes, seconds, direction) {
+                    const decimalDegrees = degrees +
+                        (minutes / 60) +
+                        (seconds / (60 * 60));
+
+                    if (direction === "S" || direction === "W") {
+                        return decimalDegrees * -1;
+                    }
+
+                    return decimalDegrees;
+                }
+            }
+
+            new LoadExif();
+        </script>
+    </body>
+</html>
