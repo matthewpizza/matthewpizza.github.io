@@ -49,10 +49,10 @@
         </style>
     </head>
     <body>
-        <label for="load-image">Load image/jpeg</label>
-        <input id="load-image" type="file" accept="image/jpeg">
+        <label for="load-image">Load image/jpeg or image/heic</label>
+        <input id="load-image" type="file" accept="image/jpeg,image/heic">
         <div></div>
-        <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/exifreader"></script>
         <script type="text/javascript">
             class LoadExif {
                 constructor() {
@@ -91,30 +91,27 @@
                     return this;
                 }
                 onFileReaderLoad(event) {
-                    const img = new Image();
-                    img.onload = () => {
-                        const width = img.width >= this.MAX_DISPLAY_WIDTH ?
-                            this.MAX_DISPLAY_WIDTH :
-                            img.width;
+                    this.exifData = ExifReader.load(event.target.result);
+                    console.log(this.exifData)
+                    this.writeExifData();
 
-                        Object.assign(document.body.style, {
-                            backgroundImage: `url(${img.src})`,
-                            backgroundSize: `${width}px auto`,
-                        });
-                    };
-                    img.src = event.target.result;
+                    // image/heic cannot be rendered
+                    // https://openheicfile.com/
+                    if (this.file.type === "image/heic") {
+                        return;
+                    }
+
+                    const src = this.convertBufferToBase64(event.target.result);
+
+                    Object.assign(document.body.style, {
+                        backgroundImage: `url(data:${this.file.type};base64,${src})`,
+                        backgroundSize: `${this.MAX_DISPLAY_WIDTH}px auto`,
+                    });
                 }
                 onInputChange(event) {
                     this.file = event.target.files.item(0);
+                    this.reader.readAsArrayBuffer(this.file);
                     this.handleImage();
-                }
-                onExifReady() {
-                    this.exifData = EXIF.getAllTags(this.file);
-
-                    // File to base64 string for preview
-                    this.reader.readAsDataURL(this.file);
-
-                    this.writeExifData();
                 }
                 handleImage() {
                     // Set label to the new filename
@@ -123,9 +120,6 @@
                     // Reset values
                     document.body.style = null;
                     this.div.innerText = "";
-
-                    // Read EXIF data
-                    EXIF.getData(this.file, this.onExifReady.bind(this));
                 }
                 writeExifData() {
                     const table = document.createElement("table");
@@ -154,10 +148,10 @@
                         return null;
                     }
 
-                    let formattedCamera = this.exifData.Make.trim();
+                    let formattedCamera = this.exifData.Make.description;
 
                     if (this.exifData.Model) {
-                        formattedCamera += ` ${this.exifData.Model.trim()}`;
+                        formattedCamera += ` ${this.exifData.Model.description}`;
                     }
 
                     return formattedCamera;
@@ -170,7 +164,7 @@
                         return null;
                     }
 
-                    return `${this.exifData.PixelXDimension} × ${this.exifData.PixelYDimension}`;
+                    return `${this.exifData.PixelXDimension.description} × ${this.exifData.PixelYDimension.description}`;
                 }
                 get Date() {
                     return this.file.lastModified ?
@@ -178,8 +172,8 @@
                         null;
                 }
                 get Aperture() {
-                    return this.exifData.ApertureValue ?
-                        `ƒ/${this.exifData.ApertureValue.toFixed(1)}` :
+                    return this.exifData.FNumber.description ?
+                        `ƒ/${this.exifData.FNumber.description}` :
                         null;
                 }
                 get FocalLength() {
@@ -187,33 +181,22 @@
                         return null;
                     }
 
-                    let formattedFocalLength = `${this.exifData.FocalLength.toString()} mm`;
+                    let formattedFocalLength = `${this.exifData.FocalLength.description} mm`;
 
                     if (this.exifData.FocalLengthIn35mmFilm) {
-                        formattedFocalLength += ` (${this.exifData.FocalLengthIn35mmFilm} mm equiv.)`;
+                        formattedFocalLength += ` (${this.exifData.FocalLengthIn35mmFilm.description} mm equiv.)`;
                     }
 
                     return formattedFocalLength;
                 }
                 get ShutterSpeed() {
-                    if (!(this.exifData.ExposureTime instanceof Number)) {
-                        return null;
-                    }
-
-                    const reducedDenominator = (
-                        this.exifData.ExposureTime.denominator / this.exifData.ExposureTime.numerator
-                    );
-
-                    // Is a "real" shutter speed?
-                    if (this.isWholeNumber(reducedDenominator)) {
-                        return `1/${reducedDenominator}`;
-                    }
-
-                    return `${this.exifData.ExposureTime.toFixed(1)}s`;
+                    return this.exifData.ExposureTime ?
+                        `${this.exifData.ExposureTime.description}s` :
+                        null;
                 }
                 get ISO() {
                     return this.exifData.ISOSpeedRatings ?
-                        this.exifData.ISOSpeedRatings :
+                        this.exifData.ISOSpeedRatings.description :
                         null;
                 }
                 get GPS() {
@@ -221,15 +204,15 @@
                         return null;
                     }
 
-                    const lat = this.convertSexagesimalToDecimal(
-                        ...this.exifData.GPSLatitude,
-                        this.exifData.GPSLatitudeRef
-                    );
+                    let lat = this.exifData.GPSLatitude.description;
+                    if (this.exifData.GPSLatitudeRef.value.join("") === "S") {
+                        lat = -1 * lat;
+                    }
 
-                    const long = this.convertSexagesimalToDecimal(
-                        ...this.exifData.GPSLongitude,
-                        this.exifData.GPSLongitudeRef
-                    );
+                    let long = this.exifData.GPSLongitude.description;
+                    if (this.exifData.GPSLongitudeRef.value.join("") === "W") {
+                        long = -1 * long;
+                    }
 
                     const link = document.createElement("a");
                     link.target = "_blank";
@@ -239,9 +222,6 @@
                     return link;
                 }
 
-                isWholeNumber(number) {
-                    return (number - Math.floor(number)) === 0;
-                }
                 bytesToSize(bytes) {
                     // Borrowed from https://gist.github.com/lanqy/5193417
                     if (!bytes) {
@@ -257,16 +237,11 @@
 
                     return `${(bytes / (1024 ** i)).toFixed(1)} ${this.FILE_SIZES[i]}`;
                 }
-                convertSexagesimalToDecimal(degrees, minutes, seconds, direction) {
-                    const decimalDegrees = degrees +
-                        (minutes / 60) +
-                        (seconds / (60 * 60));
-
-                    if (direction === "S" || direction === "W") {
-                        return decimalDegrees * -1;
-                    }
-
-                    return decimalDegrees;
+                convertBufferToBase64(buffer) {
+                    // https://gist.github.com/jonleighton/958841#gistcomment-2915919
+                    return btoa(new Uint8Array(buffer).reduce((data, byte) => {
+                        return data + String.fromCharCode(byte);
+                    }, ""));
                 }
             }
 
