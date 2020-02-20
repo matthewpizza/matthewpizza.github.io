@@ -53,6 +53,7 @@
         <input id="load-image" type="file" accept="image/jpeg,image/heic">
         <div></div>
         <script src="https://cdn.jsdelivr.net/npm/exifreader"></script>
+        <script src="https://cdn.jsdelivr.net/npm/fraction.js/fraction.min.js"></script>
         <script type="text/javascript">
             class LoadExif {
                 constructor() {
@@ -191,7 +192,7 @@
                 }
                 get ShutterSpeed() {
                     return this.exifData.ExposureTime ?
-                        `${this.exifData.ExposureTime.description}s` :
+                        `${new Fraction(this.exifData.ExposureTime.description).toFraction()}s` :
                         null;
                 }
                 get ISO() {
